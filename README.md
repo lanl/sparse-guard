@@ -1,6 +1,5 @@
-# sparse-guard
-*********************************************************************************************
-### SPARSE-GUARD: SPARSE Coding based defense against Reconstruction Attacks ##########
+# SPARSE-GUARD: 
+SPARSE Coding based defense against Reconstruction Attacks ##########
 
 *********************************************************************************************
 
@@ -25,3 +24,6 @@ Each of the 3 directories also contain another 4 python code files starting with
 ####module load miniconda3
 ####source activate your_env
 ####sbatch test.sh
+
+# License
+Sparse-Guard is provided under a BSD license with a "modifications must be indicated" clause. See the LICENSE file for the full text. Sparse-Guard is covered under the LCA-PyTorch package, known internally as LA-CC-23-064.
