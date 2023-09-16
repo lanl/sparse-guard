@@ -1,5 +1,5 @@
 # SPARSE-GUARD: 
-SPARSE Coding based defense against Reconstruction Attacks ##########
+SPARSE Coding based defense against Reconstruction Attacks
 
 This repo contains experiment on CIFAR10, MNIST, Fashion MNIST datasets
 
