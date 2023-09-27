@@ -24,7 +24,7 @@ batch_size_test = 16
 
 
 train_loader = torch.utils.data.DataLoader(
-  torchvision.datasets.MNIST('/vast/home/sdibbo/def_ddlc/data', train=True, download=True,
+  torchvision.datasets.MNIST('/dartfs-hpc/rc/home/h/f0048vh/Sparse_guard/data', train=True, download=True,
                              transform=torchvision.transforms.Compose([
                                torchvision.transforms.ToTensor(),
                                torchvision.transforms.Normalize(
@@ -33,7 +33,7 @@ train_loader = torch.utils.data.DataLoader(
   batch_size=batch_size_train, shuffle=True)
 
 test_loader = torch.utils.data.DataLoader(
-  torchvision.datasets.MNIST('/vast/home/sdibbo/def_ddlc/data', train=False, download=True,
+  torchvision.datasets.MNIST('/dartfs-hpc/rc/home/h/f0048vh/Sparse_guard/data', train=False, download=True,
                              transform=torchvision.transforms.Compose([
                                torchvision.transforms.ToTensor(),
                                torchvision.transforms.Normalize(
@@ -51,15 +51,11 @@ class SplitNN(nn.Module):
                 in_neurons=1,                        
                 kernel_size=5,              
                 stride=1,                   
-                 lambda_=0.4, lca_iters=500, pad="same", dtype=torch.float16,                
+                 lambda_=0.25, lca_iters=500, pad="same",                
             ),  
-            nn.BatchNorm2d(16),                           
-            LCAConv2D(out_neurons=28,
-                in_neurons=16,                        
-                kernel_size=5,              
-                stride=1,                   
-                 lambda_=0.4, lca_iters=500, pad="same", dtype=torch.float16),  
-                 nn.BatchNorm2d(28),  
+            #nn.BatchNorm2d(16),                           
+                       nn.Conv2d(16, 28, 5, 1, 2),       
+                 #nn.BatchNorm2d(28),  
                           nn.Linear(28, 500),
                            nn.ReLU(),
  
@@ -269,12 +265,13 @@ def attack_test(train_loader, target_model, attack_model):
         #print(recon_img.shape)
         plt.draw()
         plt.savefig(f'/vast/home/sdibbo/def_ddlc/plot/MNIST/lca/org_img{batch}.jpg', dpi=100, bbox_inches='tight')
+        
         plt.imshow(recreated_data[0][0].cpu().detach().numpy(), cmap='gray')
         plt.xticks([])
         plt.yticks([])
         #plt.imshow(mfcc_spectrogram[0][0,:,:].numpy(), cmap='viridis')
         plt.draw()
-        plt.savefig(f'/vast/home/sdibbo/def_ddlc/plot/MNIST/lca/recon_img{batch}.jpg', dpi=100, bbox_inches='tight')
+        plt.savefig(f'/dartfs-hpc/rc/home/h/f0048vh/Sparse_guard/plot/lca_split/recon_img{batch}.jpg', dpi=100, bbox_inches='tight')
         '''
         psnr_lst.append(psnr_val)
         ssim_lst.append(ssim_val)
@@ -317,9 +314,9 @@ average_ssim = Average(ssim_lst)
 average_incep = Average(fid_lst)
 print('Mean scoers are>> PSNR, SSIM, FID: ', average_psnr, average_ssim, average_incep)
 
-torch.save(attack_model, '/vast/home/sdibbo/def_ddlc/model_attack/MNIST_20_epoch_CNN_lca_attack.pt')
-torch.save(target_model, '/vast/home/sdibbo/def_ddlc/model_target/MNIST_20_epoch_CNN_lca_target.pt')
+torch.save(attack_model, '/dartfs-hpc/rc/home/h/f0048vh/Sparse_guard/model/MNIST_20_epoch_CNN_1l_lca_0.25_attack.pt')
+torch.save(target_model, '/dartfs-hpc/rc/home/h/f0048vh/Sparse_guard/model/MNIST_20_epoch_CNN_lca_0.25_target.pt')
 
 df = pd.DataFrame(list(zip(*[psnr_lst,  ssim_lst, fid_lst]))).add_prefix('Col')
 
-df.to_csv('/vast/home/sdibbo/def_ddlc/result/MNIST_20_epoch_CNN_attack_lca.csv', index=False)
+df.to_csv('/dartfs-hpc/rc/home/h/f0048vh/Sparse_guard/result/MNIST_20_epoch_CNN_attack_1l_lca_0.25.csv', index=False)

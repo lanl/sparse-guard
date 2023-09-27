@@ -60,26 +60,20 @@ class SplitNN(nn.Module):
                            nn.ReLU(),
                          )
     self.second_part = nn.Sequential(
-                           nn.Linear(500, 500),
+                           nn.Linear(14000, 500),
                            nn.ReLU(),
-                           nn.Linear(500, 28),
-                           nn.ReLU(), 
-                           nn.Linear(28, 500),                        )
-    self.third_part = nn.Sequential(
-                           nn.Linear(1*28*500, 10),
-                           #scancel nn.Softmax(dim=-1),
+                           nn.Linear(500, 10),
+                           nn.Softmax(dim=-1),
                          )
 
   def forward(self, x):
-     #x=x.view(-1,32*32*3)
+    #x=x.view(-1,32*32*3)
     x=self.first_part(x)
     #print(x.shape)
     #x = torch.flatten(x, 1) # flatten all dimensions except batch
+    x = x.view(-1, 14000)
     #print(x.shape)
     x=self.second_part(x)
-    #print(x.shape)
-    x = x.view(-1, 1*28*500)
-    x=self.third_part(x)
     return x
 
 '''
@@ -145,8 +139,7 @@ attack_model = Attacker().to(device=device)
 #optimiser = optim.Adam(target_model.parameters(), lr=1e-4)
 optimiser=torch.optim.SGD(target_model.parameters(),lr=0.001,momentum=0.9)
 cost = torch.nn.CrossEntropyLoss()
-def Average(lst):
-    return sum(lst) / len(lst)
+
 # calculate frechet inception distance
 def calculate_fid(act1, act2):
  # calculate mean and covariance statistics
@@ -206,8 +199,6 @@ def attack_train(test_loader, target_model, attack_model, optimiser):
         # First, get outputs from the target model
         #data= data.view(-1,32*32*3)
         target_outputs = target_model.first_part(data)
-        #target_outputs= target_outputs.view(-1,32*32*500)
-        target_outputs = target_model.second_part(target_outputs)        
         # Next, recreate the data with the attacker
         attack_outputs = attack_model(target_outputs)
         
@@ -271,8 +262,6 @@ def attack_test(train_loader, target_model, attack_model):
         #org_data=data
         #data= data.view(-1,32*32*3)
         target_outputs = target_model.first_part(data)
-        #target_outputs= target_outputs.view(-1,32*32*500)
-        target_outputs = target_model.second_part(target_outputs)
         recreated_data = attack_model(target_outputs)
         
         #print(org_data.shape)
@@ -284,13 +273,11 @@ def attack_test(train_loader, target_model, attack_model):
       
         psnr = PeakSignalNoiseRatio().to(device)
         psnr_val=psnr(data, recreated_data).item()
-        if (psnr_val=='-inf'):
-           psnr_val=Average(psnr_lst)
-        print("PSNR is:", psnr_val)
+        #print("PSNR is:", psnr_val)
         
         ssim = StructuralSimilarityIndexMeasure(data_range=1.0).to(device)
         ssim_val=ssim(data, recreated_data).item()
-        print("SSIM is:", ssim_val)
+        #print("SSIM is:", ssim_val)
 
         ## Inception Score
         '''
@@ -306,9 +293,7 @@ def attack_test(train_loader, target_model, attack_model):
         recon_scaled=torch.mul(torch.div(torch.sub(recreated_data, torch.min(recreated_data)),torch.sub(torch.max(recreated_data),torch.min(recreated_data))), 255)
         int_recon=recon_scaled.to(torch.uint8)
         fid_val = calculate_fid(int_data[0][0].cpu().detach().numpy(), int_recon[0][0].cpu().detach().numpy())
-        if (fid_val!=fid_val):
-           fid_val=Average(fid_lst)
-        print('FID is: %.3f' % fid_val)
+        #print('FID is: %.3f' % fid_val)
         #gen_data= recreated_data.view(-1,32*32*3)
         test_output = target_model(recreated_data)
         #attack_pred = test_output.max(1, keepdim=True)[1] # get the index of the max log-probability
@@ -319,9 +304,7 @@ def attack_test(train_loader, target_model, attack_model):
         _, pred = torch.max(test_output, -1)
         attack_correct += (pred == targets).sum().item()
         total += targets.size(0)
-        ## Commented below to skip saving images >> Original and Reconstructed images
 
-        '''
         #DataI = data[0] / 2 + 0.5
         #img= torch.permute(DataI, (1,2, 0))
         #img=img.to(torch.float32)
@@ -339,7 +322,7 @@ def attack_test(train_loader, target_model, attack_model):
         #plt.imshow(mfcc_spectrogram[0][0,:,:].numpy(), cmap='viridis')
         plt.draw()
         plt.savefig(f'./plot/MNIST/linear/recon_img{batch}.jpg', dpi=100, bbox_inches='tight')
-        '''
+
         psnr_lst.append(psnr_val)
         ssim_lst.append(ssim_val)
         fid_lst.append(fid_val)
@@ -373,7 +356,8 @@ for t in tqdm(range(attack_epochs)):
 
 print("**********Test Starting************")
 psnr_lst, ssim_lst, fid_lst=attack_test(train_loader, target_model, attack_model)
-
+def Average(lst):
+    return sum(lst) / len(lst)
 
 print('Done!')
 
@@ -383,9 +367,9 @@ average_ssim = Average(ssim_lst)
 average_incep = Average(fid_lst)
 print('Mean scoers are>> PSNR, SSIM, FID: ', average_psnr, average_ssim, average_incep)
 
-torch.save(attack_model, '/vast/home/sdibbo/def_ddlc/model_attack/etn/FMNIST_20_epoch_CNN_linear_attack.pt')
-torch.save(target_model, '/vast/home/sdibbo/def_ddlc/model_target/etn/FMNIST_20_epoch_CNN_linear_target.pt')
+torch.save(attack_model, '/vast/home/sdibbo/def_ddlc/model_attack/FMNIST_20_epoch_CNN_linear_attack.pt')
+torch.save(target_model, '/vast/home/sdibbo/def_ddlc/model_target/FMNIST_20_epoch_CNN_linear_target.pt')
 
 df = pd.DataFrame(list(zip(*[psnr_lst,  ssim_lst, fid_lst]))).add_prefix('Col')
 
-df.to_csv('/vast/home/sdibbo/def_ddlc/result/etn/FMNIST_20_epoch_CNN_attack_linear.csv', index=False)
+df.to_csv('/vast/home/sdibbo/def_ddlc/result/FMNIST_20_epoch_CNN_attack_linear.csv', index=False)

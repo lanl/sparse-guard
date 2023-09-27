@@ -24,7 +24,7 @@ batch_size_test = 16
 
 
 train_loader = torch.utils.data.DataLoader(
-  torchvision.datasets.FashionMNIST('/vast/home/sdibbo/def_ddlc/data', train=True, download=True,
+  torchvision.datasets.FashionMNIST('/dartfs-hpc/rc/home/h/f0048vh/Sparse_guard/data', train=True, download=True,
                              transform=torchvision.transforms.Compose([
                                torchvision.transforms.ToTensor(),
                                torchvision.transforms.Normalize(
@@ -33,7 +33,7 @@ train_loader = torch.utils.data.DataLoader(
   batch_size=batch_size_train, shuffle=True)
 
 test_loader = torch.utils.data.DataLoader(
-  torchvision.datasets.FashionMNIST('/vast/home/sdibbo/def_ddlc/data', train=False, download=True,
+  torchvision.datasets.FashionMNIST('/dartfs-hpc/rc/home/h/f0048vh/Sparse_guard/data', train=False, download=True,
                              transform=torchvision.transforms.Compose([
                                torchvision.transforms.ToTensor(),
                                torchvision.transforms.Normalize(
@@ -47,18 +47,22 @@ class SplitNN(nn.Module):
   def __init__(self):
     super(SplitNN, self).__init__()
     self.first_part = nn.Sequential(
-                           nn.Conv2d(
-                in_channels=1,              
-                out_channels=16,            
+       LCAConv2D(out_neurons=16,
+                in_neurons=1,                        
                 kernel_size=5,              
                 stride=1,                   
-                padding=2,                  
-            ),                              
-            nn.ReLU(),                      
-            nn.Conv2d(16, 28, 5, 1, 2),     
-            nn.ReLU(),                      
-                           nn.Linear(28, 500),
+                 lambda_=0.5, lca_iters=500, pad="same",                 
+            ),  
+            nn.BatchNorm2d(16),                           
+            LCAConv2D(out_neurons=28,
+                in_neurons=16,                        
+                kernel_size=5,              
+                stride=1,                   
+                 lambda_=0.5, lca_iters=500, pad="same", ),  
+                 nn.BatchNorm2d(28),  
+                          nn.Linear(28, 500),
                            nn.ReLU(),
+ 
                          )
     self.second_part = nn.Sequential(
                            nn.Linear(500, 500),
@@ -81,7 +85,7 @@ class SplitNN(nn.Module):
     x=self.third_part(x)
     return x
 
-target_model = SplitNN().to(device=device)
+target_model = SplitNN().to(device=device, dtype=torch.float16)
 class Attacker(nn.Module):
   def __init__(self):
     super(Attacker, self).__init__()
@@ -103,11 +107,10 @@ class Attacker(nn.Module):
   def forward(self, x):
     return self.layers(x)
   
-attack_model = Attacker().to(device=device)
+attack_model = Attacker().to(device=device, dtype=torch.float16)
 optimiser = torch.optim.SGD(target_model.parameters(), lr=0.001, weight_decay = 0.001, momentum = 0.9) 
 cost = torch.nn.CrossEntropyLoss()
-def Average(lst):
-    return sum(lst) / len(lst)
+
 # calculate frechet inception distance
 def calculate_fid(act1, act2):
  # calculate mean and covariance statistics
@@ -124,6 +127,9 @@ def calculate_fid(act1, act2):
  fid = ssdiff + trace(sigma1 + sigma2 - 2.0 * covmean)
  return fid
 
+def Average(lst):
+    return sum(lst) / len(lst)
+
 def target_train(train_loader, target_model, optimiser):
     target_model.train()
     size = len(train_loader.dataset)
@@ -131,7 +137,7 @@ def target_train(train_loader, target_model, optimiser):
     total_loss=[]
     for batch, (X, Y) in enumerate(tqdm(train_loader)):
         
-        X, Y = X.to(device=device), Y.to(device)
+        X, Y = X.to(device=device,  dtype=torch.float16), Y.to(device)
         target_model.zero_grad()
         pred = target_model(X)
         #print(pred.shape, Y.shape)
@@ -158,7 +164,7 @@ def attack_train(test_loader, target_model, attack_model, optimiser):
 #for data, targets in enumerate(tqdm(train_loader)):
     for batch, (data, targets) in enumerate(tqdm(test_loader)):
     # Reset gradients
-        data, targets = data.to(device=device), targets.to(device)
+        data, targets = data.to(device=device, dtype=torch.float16), targets.to(device)
         optimiser.zero_grad()
         #index, data = data   
         #print(data.shape)
@@ -189,7 +195,7 @@ def target_utility(test_loader, target_model, batch_size=64):
     counter_a=0
     #with torch.no_grad():
     for batch, (X, Y) in enumerate(tqdm(test_loader)):
-        X, Y = X.to(device=device), Y.to(device)
+        X, Y = X.to(device=device,  dtype=torch.float16), Y.to(device)
         X.requires_grad = True
         pred = target_model(X)
         counter_a=counter_a+1
@@ -220,7 +226,7 @@ def attack_test(train_loader, target_model, attack_model):
     attack_correct=0
     total=0
     for batch, (data, targets) in enumerate(tqdm(train_loader)):
-        data, targets = data.to(device=device), targets.to(device)
+        data, targets = data.to(device=device, dtype=torch.float16), targets.to(device)
         target_outputs = target_model.first_part(data)
         #target_outputs= target_outputs.view(-1,32*32*500)
         target_outputs = target_model.second_part(target_outputs)
@@ -230,7 +236,7 @@ def attack_test(train_loader, target_model, attack_model):
         psnr = PeakSignalNoiseRatio().to(device)
         psnr_val=psnr(data, recreated_data).item()
         if(psnr_val=='-inf'):
-           fid_val=Average(fid_lst)
+           psnr_val=Average(psnr_lst)
         print("PSNR is:", psnr_val)
         
         ssim = StructuralSimilarityIndexMeasure(data_range=1.0).to(device)
@@ -244,7 +250,7 @@ def attack_test(train_loader, target_model, attack_model):
         recon_scaled=torch.mul(torch.div(torch.sub(recreated_data, torch.min(recreated_data)),torch.sub(torch.max(recreated_data),torch.min(recreated_data))), 255)
         int_recon=recon_scaled.to(torch.uint8)
         fid_val = calculate_fid(int_data[0][0].cpu().detach().numpy(), int_recon[0][0].cpu().detach().numpy())
-        if (fid_val!=fid_val):
+        if (fid_val=='nan'):
            fid_val=Average(fid_lst)
         print('FID is: %.3f' % fid_val)
         
@@ -258,11 +264,12 @@ def attack_test(train_loader, target_model, attack_model):
         attack_correct += (pred == targets).sum().item()
         total += targets.size(0)
         ##Commented if not saving figures
-        '''
+        
         #DataI = data[0] / 2 + 0.5
         #print(DataI.shape)
         #img= torch.permute(DataI, (1,2, 0))
         #img=data
+        '''
         plt.imshow(data[0][0].cpu().detach().numpy(), cmap='gray')
         plt.xticks([])
         plt.yticks([])
@@ -272,15 +279,18 @@ def attack_test(train_loader, target_model, attack_model):
         #recon_img=torch.permute(DataR, (1,2, 0))
         #recon_img=recreated_data.to(torch.float32)
         #print(recon_img.shape)
+        
         plt.draw()
         plt.savefig(f'/vast/home/sdibbo/def_ddlc/plot/MNIST/cnn/org_img{batch}.jpg', dpi=100, bbox_inches='tight')
         plt.imshow(recreated_data[0][0].cpu().detach().numpy(), cmap='gray')
+        
         plt.xticks([])
         plt.yticks([])
         #plt.imshow(mfcc_spectrogram[0][0,:,:].numpy(), cmap='viridis')
         plt.draw()
-        plt.savefig(f'/vast/home/sdibbo/def_ddlc/plot/MNIST/cnn/recon_img{batch}.jpg', dpi=100, bbox_inches='tight')
-        '''
+        plt.savefig(f'/dartfs-hpc/rc/home/h/f0048vh/Sparse_guard/plot/l_0.5/recon_img{batch}.jpg', dpi=100, bbox_inches='tight')
+         '''
+
         psnr_lst.append(psnr_val)
         ssim_lst.append(ssim_val)
         fid_lst.append(fid_val)
@@ -321,9 +331,9 @@ average_ssim = Average(ssim_lst)
 average_incep = Average(fid_lst)
 print('Mean scoers are>> PSNR, SSIM, FID: ', average_psnr, average_ssim, average_incep)
 
-torch.save(attack_model, '/vast/home/sdibbo/def_ddlc/model_attack/etn/FMNIST_20_epoch_CNN_cnn_attack.pt')
-torch.save(target_model, '/vast/home/sdibbo/def_ddlc/model_target/etn/FMNIST_20_epoch_CNN_cnn_target.pt')
+torch.save(attack_model, '/dartfs-hpc/rc/home/h/f0048vh/Sparse_guard/model/etn_FMNIST_20_epoch_CNN_lca2_0.5_attack.pt')
+torch.save(target_model, '/dartfs-hpc/rc/home/h/f0048vh/Sparse_guard/model/etn_FMNIST_20_epoch_CNN_lca2_0.5_attack.pt')
 
 df = pd.DataFrame(list(zip(*[psnr_lst,  ssim_lst, fid_lst]))).add_prefix('Col')
 
-df.to_csv('/vast/home/sdibbo/def_ddlc/result/etn/FMNIST_20_epoch_CNN_attack_cnn.csv', index=False)
+df.to_csv('/dartfs-hpc/rc/home/h/f0048vh/Sparse_guard/result//FMNIST_20_epoch_CNN_attack_lca2_0.5.csv', index=False)

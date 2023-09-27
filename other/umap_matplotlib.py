@@ -4,8 +4,9 @@ from tqdm import tqdm
 from torch import nn, optim
 import matplotlib.pyplot as plt
 from PIL import Image
-from skimage import io
+from umap_pytorch import PUMAP
 import os
+import seaborn as sns
 import pandas as pd
 import numpy as np
 import torch.nn.functional as F
@@ -13,29 +14,49 @@ from lcapt.lca import LCAConv2D
 
 
 n_epochs = 3
-batch_size_train = 64
+batch_size_train = 500
 batch_size_attack=1
 batch_size_test = 1
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")  # use gpu if available
+#device=torch.device( "cpu") 
+pumap = PUMAP(epochs=3, min_dist=1, n_neighbors=2, num_workers=8, decoder=True, beta = 0.01, match_nonparametric_umap=True)
+pumap2 = PUMAP(epochs=3, min_dist=1, n_neighbors=2, num_workers=8, decoder=True, beta = 0.01, match_nonparametric_umap=True)
+pumap3 = PUMAP(epochs=3, min_dist=1, n_neighbors=2, num_workers=8, decoder=True, beta = 0.01, match_nonparametric_umap=True)
+
+#pumap=pumap.to(device=device)
 
 
-
-train_loader = torch.utils.data.DataLoader(
-  torchvision.datasets.CIFAR10('/vast/home/sdibbo/def_ddlc/data', train=True, download=True,
+train_data= torchvision.datasets.MNIST('/dartfs-hpc/rc/home/h/f0048vh/Sparse_guard/data', train=True, download=True,
                              transform=torchvision.transforms.Compose([
                                torchvision.transforms.ToTensor(),
                                torchvision.transforms.Normalize(
-                                 (0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
+                                 (0.1307,), (0.3081,))
+                             ]))
+ 
+'''
+train_data= torch.utils.data.DataLoader(
+  torchvision.datasets.FashionMNIST('/dartfs-hpc/rc/home/h/f0048vh/Sparse_guard/data', train=True, download=True,
+                             transform=torchvision.transforms.Compose([
+                               torchvision.transforms.ToTensor(),
+                               torchvision.transforms.Normalize(
+                                 (0.1307,), (0.3081,))
                              ])),
-  batch_size=batch_size_train, shuffle=True)
-
+  batch_size=2000, shuffle=True)
+'''
 test_loader = torch.utils.data.DataLoader(
-  torchvision.datasets.CIFAR10('/vast/home/sdibbo/def_ddlc/data', train=False, download=True,
+  torchvision.datasets.MNIST('/dartfs-hpc/rc/home/h/f0048vh/Sparse_guard/data', train=False, download=True,
                              transform=torchvision.transforms.Compose([
                                torchvision.transforms.ToTensor(),
                                torchvision.transforms.Normalize(
-                                 (0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
+                                 (0.1307,), (0.3081,))
                              ])),
   batch_size=batch_size_test, shuffle=True)
+
+train_subset = torch.utils.data.Subset(train_data, range(1000))
+#trainset_2 = torch.utils.data.Subset(trainset, odds)
+
+train_loader = torch.utils.data.DataLoader(train_subset, batch_size=batch_size_train,
+                                            shuffle=True)
 '''
 attack_loader = torch.utils.data.DataLoader(
   torchvision.datasets.CIFAR10('/vast/home/sdibbo/def_ddlc/data', train=True, download=True,
@@ -46,17 +67,16 @@ attack_loader = torch.utils.data.DataLoader(
                              ])),
   batch_size=batch_size_attack, shuffle=True)
 '''  
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")  # use gpu if available
 
 class SplitNN_linear(nn.Module):
   def __init__(self):
     super(SplitNN_linear, self).__init__()
     self.first_part = nn.Sequential(
-                           nn.Linear(32, 500),
+                           nn.Linear(28, 500),
                            nn.ReLU(),
                          )
     self.second_part = nn.Sequential(
-                           nn.Linear(48000, 500),
+                           nn.Linear(14000, 500),
                            nn.ReLU(),
                            nn.Linear(500, 10),
                            nn.Softmax(dim=-1),
@@ -66,20 +86,20 @@ class SplitNN_cnn(nn.Module):
     super(SplitNN_cnn, self).__init__()
     self.first_part = nn.Sequential(
        nn.Conv2d(
-                in_channels=3,              
+                in_channels=1,              
                 out_channels=16,            
                 kernel_size=5,              
                 stride=1,                   
                 padding=2,                  
             ),                              
             nn.ReLU(),                      
-            nn.Conv2d(16, 32, 5, 1, 2),     
+            nn.Conv2d(16, 28, 5, 1, 2),     
             nn.ReLU(), 
-                           nn.Linear(32, 500),
+                           nn.Linear(28, 500),
                            nn.ReLU(),
                          )
     self.second_part = nn.Sequential(
-                           nn.Linear(48000, 500),
+                           nn.Linear(14000, 500),
                            nn.ReLU(),
                            nn.Linear(500, 10),
                            nn.Softmax(dim=-1),
@@ -89,24 +109,24 @@ class SplitNN_lca(nn.Module):
     super(SplitNN_lca, self).__init__()
     self.first_part = nn.Sequential(
        LCAConv2D(out_neurons=16,
-                in_neurons=3,                        
+                in_neurons=1,                        
                 kernel_size=5,              
                 stride=1,                   
-                 lambda_=0.4, lca_iters=500, pad="same", dtype=torch.float16,                
+                 lambda_=0.4, lca_iters=500, pad="same",                
             ),  
             nn.BatchNorm2d(16),                           
-            LCAConv2D(out_neurons=32,
+            LCAConv2D(out_neurons=28,
                 in_neurons=16,                        
                 kernel_size=5,              
                 stride=1,                   
-                 lambda_=0.4, lca_iters=500, pad="same", dtype=torch.float16),  
-                 nn.BatchNorm2d(32),  
-                          nn.Linear(32, 500),
+                 lambda_=0.4, lca_iters=500, pad="same",),  
+                 nn.BatchNorm2d(28),  
+                          nn.Linear(28, 500),
                            nn.ReLU(),
  
                          )
     self.second_part = nn.Sequential(
-                           nn.Linear(48000, 500),
+                           nn.Linear(14000, 500),
                            nn.ReLU(),
                            nn.Linear(500, 10),
                            nn.Softmax(dim=-1),
@@ -116,7 +136,7 @@ class SplitNN_lca(nn.Module):
     x=self.first_part(x)
     #print(x.shape)
     #x = torch.flatten(x, 1) # flatten all dimensions except batch
-    x = x.view(-1, 48000)
+    x = x.view(-1, 14000)
     #print(x.shape)
     x=self.second_part(x)
     return x
@@ -164,7 +184,7 @@ class Attacker(nn.Module):
     self.layers= nn.Sequential(
                       nn.Linear(500, 800),
                       nn.ReLU(),
-                      nn.Linear(800, 32),
+                      nn.Linear(800, 28),
                     )
  
   def forward(self, x):
@@ -208,58 +228,62 @@ def attack_test(train_loader, target_model1, target_model2, target_model3):
             DataI = data[0] / 2 + 0.5
             img= torch.permute(DataI, (1,2, 0))
             #img=img.to(torch.float32)
-            #print(img.shape)
-            plt.imshow((img.cpu().detach().numpy()))
-            plt.xticks([])
-            plt.yticks([])
+            target_outputs1 = target_outputs1.view(-1, 14000)
+            #print(target_outputs1.shape)
+            pumap.fit(target_outputs1.cpu().detach())
+            embedding = pumap.transform(target_outputs1.cpu().detach()) # (50000, 2)
+            #palette2=sns.color_palette("husl", 10)
 
-            plt.draw()
-            plt.savefig(f'./distribution/one/org_img{batch}.jpg', dpi=100, bbox_inches='tight')
-
-
-
-            #gen_data= recreated_data.view(-1,32*32*3)
+            #sns.scatterplot(x=embedding[:,0], y=embedding[:,1], hue=targets, palette=palette2,  s=40)
             
-            target_outputs1 = target_outputs1[0] / 2 + 0.5
-            DataI1=target_outputs1[:,:, 0:31]
-            img1= torch.permute(DataI1, (2, 1,0))
-            #img=img.to(torch.float32)
-            #print(img.shape)
-            plt.imshow((img1.cpu().detach().numpy()))
-            plt.xticks([])
-            plt.yticks([])
+            plt.scatter(embedding[:, 0], embedding[:, 1], c=targets.cpu().detach(), cmap='Spectral', s=5)
+            plt.gca().set_aspect('equal', 'datalim')
+            plt.colorbar(boundaries=np.arange(11)-0.5).set_ticks(np.arange(10))
+            #plt.title('UMAP projection of the Digits dataset', fontsize=24)
+            
+            plt.savefig(f'/dartfs-hpc/rc/home/h/f0048vh/Sparse_guard/other/plot/dist_m.jpg', dpi=100, bbox_inches='tight')
+            #print(target_outputs2.shape)
+            target_outputs2 = target_outputs2.view(-1, 392000)
+            #print(target_outputs2.shape)
+            pumap2.fit(target_outputs2.cpu().detach())
+            #print(target_outputs1.shape)
+            embedding2 = pumap2.transform(target_outputs2.cpu().detach())
+            
+            plt.scatter(embedding2[:, 0], embedding2[:, 1], c=targets.cpu().detach(), cmap='Spectral', s=5)
+            #plt.gca().set_aspect('equal', 'datalim')
+            #plt.colorbar(boundaries=np.arange(11)-0.5).set_ticks(np.arange(10))
+            #plt.gca().set_aspect('equal', 'datalim')
+            #plt.colorbar(boundaries=np.arange(11)-0.5).set_ticks(np.arange(10))
+            #plt.title('UMAP projection of the Digits dataset', fontsize=24)
+            
+            #palette3=sns.color_palette("husl", 10)
 
-            plt.draw()
-            plt.savefig(f'./distribution/one/lin_img{batch}.jpg', dpi=100, bbox_inches='tight')
+            #sns.scatterplot(x=embedding2[:,0], y=embedding2[:,1], hue=targets, palette=palette3,  s=40)
+            plt.savefig(f'/dartfs-hpc/rc/home/h/f0048vh/Sparse_guard/other/plot/dist2_m.jpg', dpi=100, bbox_inches='tight')
+            
 
-            target_outputs2 = target_outputs2[0] / 2 + 0.5
-            DataI2=target_outputs2[:,:, 0:3]
+            target_outputs3 = target_outputs3.view(-1, 392000)
+            pumap3.fit(target_outputs3.cpu().detach())
+            #print(target_outputs1.shape)
+            embedding3 = pumap3.transform(target_outputs3.cpu().detach())
+            #print(target_outputs3.shape)
+            
+            plt.scatter(embedding3[:, 0], embedding3[:, 1], c=targets.cpu().detach(), cmap='Spectral', s=5)
+            #plt.gca().set_aspect('equal', 'datalim')
+            #plt.colorbar(boundaries=np.arange(11)-0.5).set_ticks(np.arange(10))
+            #plt.title('UMAP projection of the Digits dataset', fontsize=24)
+            
+            #palette4=sns.color_palette("husl", 10)
+
+            #sns.scatterplot(x=embedding3[:,0], y=embedding3[:,1], hue=targets, palette=palette4,  s=40)
+            plt.savefig(f'/dartfs-hpc/rc/home/h/f0048vh/Sparse_guard/other/plot/dist3_m.jpg', dpi=100, bbox_inches='tight')
+
+
             #img= torch.permute(DataI, (2, 1,0))
             #img=img.to(torch.float32)
             #print(img.shape)
-            plt.imshow((DataI2.cpu().detach().numpy()))
-            plt.xticks([])
-            plt.yticks([])
-
-            plt.draw()
-            plt.savefig(f'./distribution/one/cnn_img{batch}.jpg', dpi=100, bbox_inches='tight')
-            
-
-            target_outputs3 = target_outputs3[0] / 2 + 0.5
-            DataI3=target_outputs3[:,:, 0:3]
-            #img= torch.permute(DataI, (2, 1,0))
-            #img=img.to(torch.float32)
-            #print(img.shape)
-            plt.imshow((DataI3.cpu().detach().numpy()))
-            plt.xticks([])
-            plt.yticks([])
-
-            plt.draw()
-            plt.savefig(f'./distribution/one/lca_img{batch}.jpg', dpi=100, bbox_inches='tight')
-            
-            
     
-    return img, img1, DataI2, DataI3
+    return img
 
 def plot_dist():
     image1 = io.imread('./distribution/one/lin_img0.jpg')
@@ -303,7 +327,7 @@ loss_train_tr, loss_test_tr=[],[]
 loss_train, loss_test=[],[]
 
 print("**********Test Starting************")
-img1, img2, img3, img4=attack_test(train_loader, target_model1, target_model2, target_model3)
-fig1, fig2, fig3=plot_dist()
+img1=attack_test(train_loader, target_model1, target_model2, target_model3)
+#fig1, fig2, fig3=plot_dist()
 
 print('Done!')
