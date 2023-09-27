@@ -1,20 +1,21 @@
 # SPARSE-GUARD: 
 SPARSE Coding based defense against Reconstruction Attacks
 
-This repo contains experiment on CIFAR10, MNIST, Fashion MNIST datasets
+This repo contains experiments on MNIST, Fashion MNIST datasets using our proposed SPARSE-GUARD and standard benchmarks.
 
-Each of the 3 directories (CIFAR10, MNIST, and FMNIST) contains 4 files for 4 different target models on Split Learning. The target model that achieves lower reconstruction performance (i.e., lower PSNR, lower SSIM, and higher FID), means it works as better defense against the reconstruction attack. 
+Each of the 2 directories (MNIST, and FMNIST) contains files to implement and test different SOTA defenses as well as our proposed SPARSE-GUARD on both Split Network as well as End-to-end Networks. The defense that achieves poor reconstruction performance (i.e., lower PSNR, lower SSIM, and higher FID), indicate it as better defense against the reconstruction attacks, i.e., model inversion attack. 
 
-For example, mnist_cnn.py contains the code to train CNN architecture-based target model, performs the attack to reconstruct all training instances on MNIST dataset and finally computes the PSNR, SSIM, and FID scores using the original training sample and reconstructed sample using the model inversion attack against the split neural network. 
+For example, mnist_gaussiannoise.py contains the code to train defense with target model using Gaussian Noise, then performs the attack to reconstruct all training instances on MNIST dataset and finally computes the PSNR, SSIM, and FID scores using the original training sample and reconstructed sample. 
 
 
-Each of the 3 directories also contain another 4 python code files starting with *etn* prefix to denote the similar attacks against that particular dataset using the end-to-end network, where the adversary can only access the output just before the classification layer.
+Each of the directories also contain another sets of python code files starting with *etn* prefix to denote the similar attacks against that particular dataset using the end-to-end network, where the adversary can only access the output of last hidden layer before the classification layer.
 
-distribution directory contains the plots on entire dataset as well as single image across different models
+"other" directory contains code to plot the Umap representation of linear, convolution and sparse coding layers.
 
-Dist_plot.ipynb is for plotting the distributions (data files for this code can be generated using the code files provided in the *other* directory)
 
-model_attack and model_target directories contains different models that are trained in our codes
+"model" directory contains different saved models that are trained with our codes
+
+***For lambda value experiment, vary the lambda value in corresponding code file.
 
 To run a code file first one has to install conda environment, pytorch, and other required packages.
 Once all installation is complete, one can run the following commands top activate the conda env and finally run the shell script (i.e., test.sh) provided to execute a python code file.
